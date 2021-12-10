@@ -26,7 +26,7 @@ protected:
 
 	void CreateComponents();
 	void CreateMotionController(USceneComponent* a_compParent, FName a_strDisplayName, FName a_nameHandType);
-	UStaticMeshComponent* CreateHandMesh(UMotionControllerComponent* a_compParent, FName a_strDisplayName, FName a_nameHandType);
+	USkeletalMeshComponent* CreateHandMesh(UMotionControllerComponent* a_compParent, FName a_strDisplayName, FName a_nameHandType);
 
 public:	
 	// Called every frame

@@ -84,21 +84,21 @@ void AVRPlayerPawn::CreateMotionController(USceneComponent* a_compParent, FName 
 	CreateHandMesh(motionControllerComponent, strMeshDisplayName, a_nameHandType);
 }
 
-UStaticMeshComponent* AVRPlayerPawn::CreateHandMesh(UMotionControllerComponent* a_compParent, FName a_strDisplayName, FName a_nameHandType)
+USkeletalMeshComponent* AVRPlayerPawn::CreateHandMesh(UMotionControllerComponent* a_compParent, FName a_strDisplayName, FName a_nameHandType)
 {
-	UStaticMeshComponent* refComponentHand = NULL;
+	USkeletalMeshComponent* refComponentHand = NULL;
 
 	// Find the default cube as placeholder
-	static ConstructorHelpers::FObjectFinder<UStaticMesh> CubeMeshObject(TEXT("StaticMesh'/Engine/BasicShapes/Cube.Cube'"));
-	if (!CubeMeshObject.Object)
+	static ConstructorHelpers::FObjectFinder<USkeletalMesh> HandMeshObject(TEXT("SkeletalMesh'/Game/Meshes/Player_hand/Player_hand.Player_hand'"));
+	if (!HandMeshObject.Object)
 	{
-		UE_LOG(LogTemp, Error, TEXT("Could not load the default cube for hand mesh"));
+		UE_LOG(LogTemp, Error, TEXT("Could not load hand mesh"));
 		return NULL;
 	}
 
 	// Set Static mesh
-	refComponentHand = CreateDefaultSubobject<UStaticMeshComponent>(a_strDisplayName);
-	refComponentHand->SetStaticMesh(CubeMeshObject.Object);
+	refComponentHand = CreateDefaultSubobject<USkeletalMeshComponent>(a_strDisplayName);
+	refComponentHand->SetSkeletalMesh(HandMeshObject.Object);
 
 	// Set Shown in-game
 	refComponentHand->SetAutoActivate(true);
@@ -108,9 +108,23 @@ UStaticMeshComponent* AVRPlayerPawn::CreateHandMesh(UMotionControllerComponent* 
 	// Set root (parent)
 	refComponentHand->SetupAttachment(a_compParent);
 
+	FQuat qRotation = FQuat::Identity;
+	FVector vec3Scale = FVector::OneVector;
+
+	// Rotate correctly
+	if (a_nameHandType == FXRMotionControllerBase::LeftHandSourceId)
+	{
+		qRotation = FQuat(FVector(0, 0, 1), FMath::DegreesToRadians(90));
+		vec3Scale = FVector(0.75, -0.75, 0.75);
+	}
+	else
+	{
+		qRotation = FQuat(FVector(0, 0, 1), FMath::DegreesToRadians(-90));
+		vec3Scale = FVector(0.75, 0.75, 0.75);
+	}
+
 	// Set location and size
-	refComponentHand->SetRelativeLocationAndRotation(FVector::ZeroVector, FQuat::Identity);
-	FVector vec3Scale = FVector(2, 2, 2);
+	refComponentHand->SetRelativeLocationAndRotation(FVector::ZeroVector, qRotation);
 	refComponentHand->SetRelativeScale3D(vec3Scale);
 
 	// Return mesh
