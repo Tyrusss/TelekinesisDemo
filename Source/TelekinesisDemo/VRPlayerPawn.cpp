@@ -2,7 +2,6 @@
 
 
 #include "VRPlayerPawn.h"
-#include "Engine.h"
 
 // Sets default values
 AVRPlayerPawn::AVRPlayerPawn()
@@ -10,7 +9,35 @@ AVRPlayerPawn::AVRPlayerPawn()
  	// Set this pawn to call Tick() every frame.  You can turn this off to improve performance if you don't need it.
 	PrimaryActorTick.bCanEverTick = true;
 
-	AVRPlayerPawn::CreateComponents();
+	AutoPossessPlayer = EAutoReceiveInput::Player0;
+
+	//// Locomotion
+	MovementDirection = FVector::ZeroVector;
+	TurningDirection = FRotator::ZeroRotator;
+
+	//// Component inits
+	// Default root component (parent)
+	playerRootComponent = CreateDefaultSubobject<USceneComponent>(TEXT("SceneRoot"));
+	RootComponent = playerRootComponent;
+
+	// Camera Scene Component (transform)
+	cameraOriginVR = CreateDefaultSubobject<USceneComponent>(TEXT("VR Camera Origin"));
+	cameraOriginVR->SetupAttachment(playerRootComponent);
+	cameraOriginVR->SetRelativeLocationAndRotation(FVector::ZeroVector, FQuat::Identity);
+	cameraOriginVR->SetRelativeScale3D(FVector::OneVector);
+
+	// Camera Component
+	cameraVR = CreateDefaultSubobject<UCameraComponent>(TEXT("VR Camera"));
+	cameraVR->SetupAttachment(cameraOriginVR);
+	cameraVR->SetRelativeLocationAndRotation(FVector::ZeroVector, FQuat::Identity);
+	cameraVR->SetRelativeScale3D(FVector::OneVector);
+
+	// Motion Controller components
+	leftMotionControllerComponent = CreateMotionController(cameraOriginVR, TEXT("MC_Left"), FXRMotionControllerBase::LeftHandSourceId);
+	leftHandMesh = CreateHandMesh(leftMotionControllerComponent, TEXT("Hand_Left"), FXRMotionControllerBase::LeftHandSourceId);
+
+	rightMotionControllerComponent = CreateMotionController(cameraOriginVR, TEXT("MC_Right"), FXRMotionControllerBase::RightHandSourceId);
+	rightHandMesh = CreateHandMesh(rightMotionControllerComponent, TEXT("Hand_Right"), FXRMotionControllerBase::RightHandSourceId);
 
 }
 
@@ -30,6 +57,23 @@ void AVRPlayerPawn::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
+	if (!MovementDirection.IsZero())
+	{
+		const FVector NewLocation = GetActorLocation() + (MovementDirection + DeltaTime * MovementSpeed);
+		SetActorLocation(NewLocation);
+		MovementDirection = FVector::ZeroVector;
+	}
+
+	if (GEngine) {
+		GEngine->AddOnScreenDebugMessage(-1, 10, FColor::Red, FString::SanitizeFloat(GetActorRotation().Yaw), true);
+	}
+
+	if (!TurningDirection.IsZero())
+	{
+		const FRotator NewRotation = GetActorRotation().Add(0, TurningDirection.Yaw + DeltaTime * TurningSpeed, 0);
+		SetActorRotation(NewRotation);
+		TurningDirection = FRotator::ZeroRotator;
+	}
 }
 
 // Called to bind functionality to input
@@ -37,38 +81,29 @@ void AVRPlayerPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputCompon
 {
 	Super::SetupPlayerInputComponent(PlayerInputComponent);
 
+	InputComponent->BindAxis("MotionControllerThumbLeft_X", this, &AVRPlayerPawn::HorizontalMove);
+	InputComponent->BindAxis("MotionControllerThumbLeft_Y", this, &AVRPlayerPawn::ForwardMove);
+	InputComponent->BindAxis("MotionControllerThumbRight_X", this, &AVRPlayerPawn::PlayerTurn);
 }
 
-void AVRPlayerPawn::CreateComponents()
+void AVRPlayerPawn::ForwardMove(float value)
 {
-	// Default root component (parent)
-	USceneComponent* rootComponent = CreateDefaultSubobject<USceneComponent>(TEXT("SceneRoot"));
-	RootComponent = rootComponent;
-
-	// FloatingPawnMovement
-	UFloatingPawnMovement* floatingMovementComponent = CreateDefaultSubobject<UFloatingPawnMovement>(TEXT("Floating Movement"));
-
-	// Camera Scene Component (transform)
-	USceneComponent* cameraOriginVR = CreateDefaultSubobject<USceneComponent>(TEXT("VR Camera Origin"));
-	cameraOriginVR->SetupAttachment(rootComponent);
-	cameraOriginVR->SetRelativeLocationAndRotation(FVector::ZeroVector, FQuat::Identity);
-	cameraOriginVR->SetRelativeScale3D(FVector::OneVector);
-
-	// Camera Component
-	UCameraComponent* cameraVR = CreateDefaultSubobject<UCameraComponent>(TEXT("VR Camera"));
-	cameraVR->SetupAttachment(cameraOriginVR);
-	cameraVR->SetRelativeLocationAndRotation(FVector::ZeroVector, FQuat::Identity);
-	cameraVR->SetRelativeScale3D(FVector::OneVector);
-
-	// Motion Controllers
-	AVRPlayerPawn::CreateMotionController(cameraOriginVR, "MC_Left", FXRMotionControllerBase::LeftHandSourceId);
-	AVRPlayerPawn::CreateMotionController(cameraOriginVR, "MC_Right", FXRMotionControllerBase::RightHandSourceId);
-
-	//SteamVR Chaperone (broken?)
-	//USteamVRChaperoneComponent* chaperoneComponent = CreateDefaultSubobject<USteamVRChaperoneComponent>(TEXT("SteamVR Chaperon"));
+	MovementDirection.X += cameraVR->GetForwardVector().X * value;
+	MovementDirection.Y += cameraVR->GetForwardVector().Y * value;
 }
 
-void AVRPlayerPawn::CreateMotionController(USceneComponent* a_compParent, FName a_strDisplayName, FName a_nameHandType)
+void AVRPlayerPawn::HorizontalMove(float value)
+{
+	MovementDirection.X += cameraVR->GetRightVector().X * value;
+	MovementDirection.Y += cameraVR->GetRightVector().Y * value;
+}
+
+void AVRPlayerPawn::PlayerTurn(float value)
+{
+	TurningDirection.Yaw = value;
+}
+
+UMotionControllerComponent* AVRPlayerPawn::CreateMotionController(USceneComponent* a_compParent, FName a_strDisplayName, FName a_nameHandType)
 {
 	// Create Component and set location/size
 	UMotionControllerComponent* motionControllerComponent = CreateDefaultSubobject<UMotionControllerComponent>(a_strDisplayName);
@@ -79,9 +114,7 @@ void AVRPlayerPawn::CreateMotionController(USceneComponent* a_compParent, FName 
 	motionControllerComponent->MotionSource = a_nameHandType;
 	motionControllerComponent->SetupAttachment(a_compParent);
 
-	// Set Static mesh
-	FName strMeshDisplayName = a_nameHandType == FXRMotionControllerBase::LeftHandSourceId ? FName(TEXT("Hand_Left")) : FName(TEXT("Hand_Right"));
-	CreateHandMesh(motionControllerComponent, strMeshDisplayName, a_nameHandType);
+	return motionControllerComponent;
 }
 
 USkeletalMeshComponent* AVRPlayerPawn::CreateHandMesh(UMotionControllerComponent* a_compParent, FName a_strDisplayName, FName a_nameHandType)
